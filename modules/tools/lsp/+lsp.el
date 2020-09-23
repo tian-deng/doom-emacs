@@ -44,6 +44,8 @@ should be a deliberate act (as is flipping this variable).")
         lsp-enable-on-type-formatting nil)
 
   :config
+  (pushnew! doom-debug-variables 'lsp-log-io 'lsp-print-performance)
+
   (setq lsp-intelephense-storage-path (concat doom-cache-dir "lsp-intelephense/")
         lsp-vetur-global-snippets-dir (expand-file-name "vetur"
                                                         (or (bound-and-true-p +snippets-dir)
@@ -60,12 +62,6 @@ should be a deliberate act (as is flipping this variable).")
     :type-definition #'lsp-find-type-definition
     :references #'lsp-find-references)
 
-  ;; REVIEW The '<leader> c l' prefix is hardcoded here, unfortunately.
-  (when (featurep! :config default +bindings)
-    (dolist (leader-key (list doom-leader-key doom-leader-alt-key))
-      (let ((lsp-keymap-prefix (concat leader-key " c l")))
-        (lsp-enable-which-key-integration))))
-
   (when lsp-auto-configure
     (mapc (lambda (package) (require package nil t))
           (cl-remove-if #'featurep lsp-client-packages)))
@@ -74,7 +70,7 @@ should be a deliberate act (as is flipping this variable).")
     "Replace auto-install behavior with warning and support indirect buffers."
     :around #'lsp
     (if +lsp-auto-install-servers
-        (apply-orig-fn args)
+        (apply orig-fn args)
       (letf! ((buffer-file-name
                ;; Add support for indirect buffers (org src or capture buffers)
                (or buffer-file-name
