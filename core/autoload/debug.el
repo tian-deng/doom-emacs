@@ -12,7 +12,8 @@
     init-file-debug
     jka-compr-verbose
     url-debug
-    use-package-verbose)
+    use-package-verbose
+    (message-log-max . 16384))
   "A list of variable to toggle on `doom-debug-mode'.
 
 Each entry can be a variable symbol or a cons cell whose CAR is the variable
@@ -49,8 +50,9 @@ symbol and CDR is the value to set it to when `doom-debug-mode' is activated.")
             ((if (boundp var)
                  (set-default var enabled)
                (add-to-list 'doom--debug-vars-undefined var)))))
-    (when (fboundp 'explain-pause-mode)
-      (explain-pause-mode enabled))
+    (when (called-interactively-p 'any)
+      (when (fboundp 'explain-pause-mode)
+        (explain-pause-mode (if enabled +1 -1))))
     ;; Watch for changes in `doom-debug-variables', or when packages load (and
     ;; potentially define one of `doom-debug-variables'), in case some of them
     ;; aren't defined when `doom-debug-mode' is first loaded.
@@ -123,7 +125,9 @@ ready to be pasted in a bug report on github."
          (buildopts . ,system-configuration-options)
          (features  . ,system-configuration-features)
          (traits . ,(delq
-                     nil (list (if (not doom-interactive-p) 'batch)
+                     nil (list (cond ((not doom-interactive-p) 'batch)
+                                     ((display-graphic-p) 'gui)
+                                     ('tty))
                                (if (daemonp) 'daemon)
                                (if (and (require 'server)
                                         (server-running-p))
@@ -141,6 +145,9 @@ ready to be pasted in a bug report on github."
         (doom
          (dir     . ,(abbrev-path (file-truename doom-private-dir)))
          (version . ,doom-version)
+         ,@(when doom-interactive-p
+             `((font  . ,(bound-and-true-p doom-font))
+               (theme . ,(bound-and-true-p doom-theme))))
          (build   . ,(sh "git" "log" "-1" "--format=%D %h %ci"))
          (elc-files
           . ,(length (doom-files-in `(,@doom-modules-dirs
@@ -211,16 +218,12 @@ branch and commit."
 
 ;;;###autoload
 (defun doom/info (&optional raw)
-  "Collects some debug information about your Emacs session, formats it into
-markdown and copies it to your clipboard, ready to be pasted into bug reports!"
+  "Collects some debug information about your Emacs session, formats it and
+copies it to your clipboard, ready to be pasted into bug reports!"
   (interactive "P")
-  (let ((buffer (get-buffer-create "*doom-info*"))
+  (let ((buffer (get-buffer-create "*doom info*"))
         (info (doom-info)))
     (with-current-buffer buffer
-      (or (not doom-interactive-p)
-          (eq major-mode 'markdown-mode)
-          (not (fboundp 'markdown-mode))
-          (markdown-mode))
       (erase-buffer)
       (if raw
           (progn
@@ -234,7 +237,7 @@ markdown and copies it to your clipboard, ready to be pasted into bug reports!"
                   (let ((sexp (prin1-to-string (sexp-at-point))))
                     (delete-region beg end)
                     (insert sexp))))))
-        (insert "<details>\n\n```\n")
+        (insert "```\n")
         (dolist (group info)
           (insert! "%-8s%-10s %s\n"
                    ((upcase (symbol-name (car group)))
@@ -243,12 +246,12 @@ markdown and copies it to your clipboard, ready to be pasted into bug reports!"
           (dolist (spec (cddr group))
             (insert! (indent 8 "%-10s %s\n")
                      ((car spec) (cdr spec)))))
-        (insert "```\n</details>"))
+        (insert "```\n"))
       (if (not doom-interactive-p)
           (print! (buffer-string))
-        (switch-to-buffer buffer)
+        (pop-to-buffer buffer)
         (kill-new (buffer-string))
-        (print! (green "Copied markdown to clipboard"))))))
+        (print! (green "Copied your doom info to clipboard"))))))
 
 ;;;###autoload
 (defun doom/am-i-secure ()
@@ -316,17 +319,23 @@ Some items are not supported by the `nsm.el' module."
     (with-temp-file file
       (prin1 `(progn
                 (setq noninteractive nil
+                      user-init-file ,file
                       process-environment ',doom--initial-process-environment
                       exec-path ',doom--initial-exec-path
                       init-file-debug t
+                      doom--initial-load-path load-path
                       load-path ',load-path
                       package--init-file-ensured t
                       package-user-dir ,package-user-dir
                       package-archives ',package-archives
-                      user-emacs-directory ,doom-emacs-dir)
+                      user-emacs-directory ,doom-emacs-dir
+                      comp-deferred-compilation nil
+                      comp-eln-load-path ',(bound-and-true-p comp-eln-load-path)
+                      comp-async-env-modifier-form ',(bound-and-true-p comp-async-env-modifier-form)
+                      comp-deferred-compilation-black-list ',(bound-and-true-p comp-deferred-compilation-black-list))
                 (with-eval-after-load 'undo-tree
-                  ;; undo-tree throws errors because `buffer-undo-tree' isn't
-                  ;; correctly initialized
+                  ;; HACK `undo-tree' throws errors because `buffer-undo-tree'
+                  ;;      isn't correctly initialized
                   (setq-default buffer-undo-tree (make-undo-tree)))
                 (ignore-errors
                   (delete-directory ,(expand-file-name "auto-save-list" doom-emacs-dir) 'parents)))
@@ -445,6 +454,21 @@ If called when a backtrace buffer is present, it and the output of `doom-info'
 will be automatically appended to the result."
   (interactive)
   (browse-url "https://github.com/hlissner/doom-emacs/issues/new/choose"))
+
+;;;###autoload
+(defun doom/copy-buffer-contents (buffer-name)
+  "Copy the contents of BUFFER-NAME to your clipboard."
+  (interactive
+   (list (if current-prefix-arg
+             (completing-read "Select buffer: " (mapcar #'buffer-name (buffer-list)))
+           (buffer-name (current-buffer)))))
+  (let ((buffer (get-buffer buffer-name)))
+    (unless (buffer-live-p buffer)
+      (user-error "Buffer isn't live"))
+    (kill-new
+     (with-current-buffer buffer
+       (substring-no-properties (buffer-string))))
+    (message "Contents of %S were copied to the clipboard" buffer-name)))
 
 
 ;;

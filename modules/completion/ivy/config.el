@@ -60,8 +60,6 @@ results buffer.")
         ivy-wrap t
         ivy-fixed-height-minibuffer t
         projectile-completion-system 'ivy
-        ;; disable magic slash on non-match
-        ivy-magic-slash-non-match-action nil
         ;; don't show recent files in switch-buffer
         ivy-use-virtual-buffers nil
         ;; ...but if that ever changes, show their full path
@@ -120,6 +118,10 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
                                  'ivy-switch-buffer))
                 :test #'equal))
 
+  (defun ivy-rich-bookmark-filename-or-empty (candidate)
+    (let ((filename (ivy-rich-bookmark-filename candidate)))
+      (if (not filename) "" filename)))
+
   ;; Enahnce the appearance of a couple counsel commands
   (plist-put! ivy-rich-display-transformers-list
               'counsel-describe-variable
@@ -137,7 +139,7 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
               'counsel-bookmark
               '(:columns
                 ((ivy-rich-candidate (:width 0.5))
-                 (ivy-rich-bookmark-filename (:width 60)))))
+                 (ivy-rich-bookmark-filename-or-empty (:width 60)))))
 
   ;; Remove built-in coloring of buffer list; we do our own
   (setq ivy-switch-buffer-faces-alist nil)
@@ -284,12 +286,10 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
     :override #'counsel--find-return-list
     (cl-destructuring-bind (find-program . args)
         (cond ((when-let (fd (executable-find (or doom-projectile-fd-binary "fd")))
-                 (append (list fd
-                               "--color=never" "-E" ".git"
-                               "--type" "file" "--type" "symlink" "--follow")
+                 (append (list fd "-H" "--color=never" "--type" "file" "--type" "symlink" "--follow")
                          (if IS-WINDOWS '("--path-separator=/")))))
               ((executable-find "rg")
-               (append (list "rg" "--files" "--follow" "--color=never" "--hidden" "--no-messages")
+               (append (list "rg" "--files" "--follow" "--color=never" "--hidden" "-g!.git" "--no-messages")
                        (cl-loop for dir in projectile-globally-ignored-directories
                                 collect "--glob"
                                 collect (concat "!" dir))
@@ -360,7 +360,7 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
     (setf (alist-get fn ivy-posframe-display-functions-alist)
           #'ivy-display-function-fallback))
 
-  (add-hook 'doom-reload-hook #'posframe-delete-all))
+  (add-hook 'doom-after-reload-hook #'posframe-delete-all))
 
 
 (use-package! flx
@@ -369,11 +369,14 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
   :defer t  ; is loaded by ivy
   :init (setq ivy-flx-limit 10000))
 
+(use-package! ivy-avy
+  :after ivy)
 
 (use-package! ivy-prescient
   :when (featurep! +prescient)
   :hook (ivy-mode . ivy-prescient-mode)
   :hook (ivy-prescient-mode . prescient-persist-mode)
+  :commands +ivy-prescient-non-fuzzy
   :init
   (setq prescient-filter-method
         (if (featurep! +fuzzy)

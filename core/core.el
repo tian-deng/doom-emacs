@@ -1,5 +1,10 @@
 ;;; core.el --- the heart of the beast -*- lexical-binding: t; -*-
 
+;; Prevent unwanted runtime builds in gccemacs (native-comp); packages are
+;; compiled ahead-of-time when they are installed and site files are compiled
+;; when gccemacs is installed.
+(setq comp-deferred-compilation nil)
+
 (eval-when-compile
   (when (< emacs-major-version 26)
     (error "Detected Emacs v%s. Doom only supports Emacs 26 and newer"
@@ -20,7 +25,7 @@
 (defconst IS-BSD     (or IS-MAC (eq system-type 'berkeley-unix)))
 
 ;; Unix tools look for HOME, but this is normally not defined on Windows.
-(when (and IS-WINDOWS (null (getenv "HOME")))
+(when (and IS-WINDOWS (null (getenv-internal "HOME")))
   (setenv "HOME" (getenv "USERPROFILE")))
 
 ;; Ensure `doom-core-dir' is in `load-path'
@@ -34,7 +39,7 @@
 ;; path/io functions. You get a minor speed up by nooping this. However, this
 ;; may cause problems on builds of Emacs where its site lisp files aren't
 ;; byte-compiled and we're forced to load the *.el.gz files (e.g. on Alpine)
-(unless noninteractive
+(unless (or noninteractive (daemonp))
   (defvar doom--initial-file-name-handler-alist file-name-handler-alist)
 
   (setq file-name-handler-alist nil)
@@ -47,12 +52,6 @@
       (add-to-list 'doom--initial-file-name-handler-alist handler))
     (setq file-name-handler-alist doom--initial-file-name-handler-alist))
   (add-hook 'emacs-startup-hook #'doom-reset-file-handler-alist-h))
-
-;; REVIEW Fixes 'void-variable tab-prefix-map' errors caused by packages that
-;;        prematurely use this variable before it was introduced. Remove this in
-;;        a year.
-(unless (boundp 'tab-prefix-map)
-  (defvar tab-prefix-map (make-sparse-keymap)))
 
 ;; Just the bare necessities
 (require 'subr-x)
@@ -69,7 +68,7 @@
 (defvar doom-init-time nil
   "The time it took, in seconds, for Doom Emacs to initialize.")
 
-(defvar doom-debug-p (or (getenv "DEBUG") init-file-debug)
+(defvar doom-debug-p (or (getenv-internal "DEBUG") init-file-debug)
   "If non-nil, Doom will log more.
 
 Use `doom-debug-mode' to toggle it. The --debug-init flag and setting the DEBUG
@@ -90,12 +89,13 @@ envvar will enable this at startup.")
   "The root directory for Doom's modules. Must end with a slash.")
 
 (defconst doom-local-dir
-  (if-let (localdir (getenv "DOOMLOCALDIR"))
+  (if-let (localdir (getenv-internal "DOOMLOCALDIR"))
       (expand-file-name (file-name-as-directory localdir))
     (concat doom-emacs-dir ".local/"))
   "Root directory for local storage.
 
 Use this as a storage location for this system's installation of Doom Emacs.
+
 These files should not be shared across systems. By default, it is used by
 `doom-etc-dir' and `doom-cache-dir'. Must end with a slash.")
 
@@ -114,11 +114,11 @@ Use this for files that change often, like cache files. Must end with a slash.")
   "Where Doom's documentation files are stored. Must end with a slash.")
 
 (defconst doom-private-dir
-  (if-let (doomdir (getenv "DOOMDIR"))
+  (if-let (doomdir (getenv-internal "DOOMDIR"))
       (expand-file-name (file-name-as-directory doomdir))
     (or (let ((xdgdir
                (expand-file-name "doom/"
-                                 (or (getenv "XDG_CONFIG_HOME")
+                                 (or (getenv-internal "XDG_CONFIG_HOME")
                                      "~/.config"))))
           (if (file-directory-p xdgdir) xdgdir))
         "~/.doom.d/"))
@@ -127,7 +127,8 @@ Use this for files that change often, like cache files. Must end with a slash.")
 Defaults to ~/.config/doom, ~/.doom.d or the value of the DOOMDIR envvar;
 whichever is found first. Must end in a slash.")
 
-(defconst doom-autoloads-file (concat doom-local-dir "autoloads.el")
+(defconst doom-autoloads-file
+  (concat doom-local-dir "autoloads." emacs-version ".el")
   "Where `doom-reload-core-autoloads' stores its core autoloads.
 
 This file is responsible for informing Emacs where to find all of Doom's
@@ -154,7 +155,7 @@ users).")
 ;;; Emacs core configuration
 
 ;; lo', longer logs ahoy, so to reliably locate lapses in doom's logic later
-(setq message-log-max 8192)
+(setq message-log-max 4096)
 
 ;; Reduce debug output, well, unless we've asked for it.
 (setq debug-on-error doom-debug-p
@@ -207,7 +208,7 @@ users).")
 ;; Emacs is essentially one huge security vulnerability, what with all the
 ;; dependencies it pulls in from all corners of the globe. Let's try to be at
 ;; least a little more discerning.
-(setq gnutls-verify-error (not (getenv "INSECURE"))
+(setq gnutls-verify-error (not (getenv-internal "INSECURE"))
       gnutls-algorithm-priority
       (when (boundp 'libgnutls-version)
         (concat "SECURE128:+SECURE192:-VERS-ALL"
@@ -236,11 +237,12 @@ users).")
 (setq auth-sources (list (concat doom-etc-dir "authinfo.gpg")
                          "~/.authinfo.gpg"))
 
-;; Don't litter `doom-emacs-dir'. We don't use `no-littering' because it's a
-;; mote too opinionated for our needs.
-(setq abbrev-file-name             (concat doom-local-dir "abbrev.el")
-      async-byte-compile-log-file  (concat doom-etc-dir "async-bytecomp.log")
-      bookmark-default-file        (concat doom-etc-dir "bookmarks")
+
+;;
+;;; Don't litter `doom-emacs-dir'
+
+;; We avoid `no-littering' because it's a mote too opinionated for our needs.
+(setq async-byte-compile-log-file  (concat doom-etc-dir "async-bytecomp.log")
       custom-file                  (concat doom-private-dir "custom.el")
       custom-theme-directory       (concat doom-private-dir "themes/")
       desktop-dirname              (concat doom-etc-dir "desktop")
@@ -248,20 +250,16 @@ users).")
       desktop-base-lock-name       "autosave-lock"
       pcache-directory             (concat doom-cache-dir "pcache/")
       request-storage-directory    (concat doom-cache-dir "request")
-      shared-game-score-directory  (concat doom-etc-dir "shared-game-score/")
-      tramp-auto-save-directory    (concat doom-cache-dir "tramp-auto-save/")
-      tramp-backup-directory-alist backup-directory-alist
-      tramp-persistency-file-name  (concat doom-cache-dir "tramp-persistency.el")
-      url-cache-directory          (concat doom-cache-dir "url/")
-      url-configuration-directory  (concat doom-etc-dir "url/")
-      gamegrid-user-score-file-directory (concat doom-etc-dir "games/"))
+      shared-game-score-directory  (concat doom-etc-dir "shared-game-score/"))
 
-;; HACK Stop sessions from littering the user directory
-(defadvice! doom--use-cache-dir-a (session-id)
-  :override #'emacs-session-filename
-  (concat doom-cache-dir "emacs-session." session-id))
+(defadvice! doom--write-to-etc-dir-a (orig-fn &rest args)
+  "Resolve Emacs storage directory to `doom-etc-dir', to keep local files from
+polluting `doom-emacs-dir'."
+  :around #'locate-user-emacs-file
+  (let ((user-emacs-directory doom-etc-dir))
+    (apply orig-fn args)))
 
-(defadvice! doom--save-enabled-commands-to-doomdir-a (orig-fn &rest args)
+(defadvice! doom--write-enabled-commands-to-doomdir-a (orig-fn &rest args)
   "When enabling a disabled command, the `put' call is written to
 ~/.emacs.d/init.el, which causes issues for Doom, so write it to the user's
 config.el instead."
@@ -278,16 +276,22 @@ config.el instead."
 (when (boundp 'comp-eln-load-path)
   (add-to-list 'comp-eln-load-path (concat doom-cache-dir "eln/")))
 
-(after! comp
-  ;; HACK `comp-eln-load-path' isn't fully respected yet, because native
-  ;;      compilation occurs in another emacs process that isn't seeded with our
-  ;;      value for `comp-eln-load-path', so we inject it ourselves:
-  (setq comp-async-env-modifier-form
-        `(progn
-           ,comp-async-env-modifier-form
-           (setq comp-eln-load-path ',(bound-and-true-p comp-eln-load-path))))
+(with-eval-after-load 'comp
   ;; HACK Disable native-compilation for some troublesome packages
-  (add-to-list 'comp-deferred-compilation-black-list "/evil-collection-vterm\\.el\\'"))
+  (dolist (entry (list (concat "\\`" (regexp-quote doom-local-dir) ".*/evil-collection-vterm\\.el\\'")
+                       ;; https://github.com/nnicandro/emacs-jupyter/issues/297
+                       (concat "\\`" (regexp-quote doom-local-dir) ".*/jupyter-channel\\.el\\'")
+                       (concat "\\`" (regexp-quote doom-local-dir) ".*/with-editor\\.el\\'")
+                       (concat "\\`" (regexp-quote doom-autoloads-file) "'")))
+    (add-to-list 'comp-deferred-compilation-deny-list entry))
+
+  ;; Default to using all cores, rather than half of them, since we compile
+  ;; things ahead-of-time in a non-interactive session.
+  (defadvice! doom--comp-use-all-cores-a ()
+    :override #'comp-effective-async-max-jobs
+    (if (zerop comp-async-jobs-number)
+        (setq comp-num-cpus (doom-num-cpus))
+      comp-async-jobs-number)))
 
 
 ;;
@@ -370,17 +374,9 @@ config.el instead."
 (defun doom-run-local-var-hooks-h ()
   "Run MODE-local-vars-hook after local variables are initialized."
   (unless doom-inhibit-local-var-hooks
-    (set (make-local-variable 'doom-inhibit-local-var-hooks) t)
+    (setq-local doom-inhibit-local-var-hooks t)
     (run-hook-wrapped (intern-soft (format "%s-local-vars-hook" major-mode))
                       #'doom-try-run-hook)))
-
-;; If the user has disabled `enable-local-variables', then
-;; `hack-local-variables-hook' is never triggered, so we trigger it at the end
-;; of `after-change-major-mode-hook':
-(defun doom-run-local-var-hooks-maybe-h ()
-  "Run `doom-run-local-var-hooks-h' if `enable-local-variables' is disabled."
-  (unless enable-local-variables
-    (doom-run-local-var-hooks-h)))
 
 
 ;;
@@ -472,6 +468,12 @@ If this is a daemon session, load them all immediately instead."
 (defvar doom-first-buffer-hook nil
   "Transient hooks run before the first interactively opened buffer.")
 
+(defvar doom-after-reload-hook nil
+  "A list of hooks to run before `doom/reload' has reloaded Doom.")
+
+(defvar doom-before-reload-hook nil
+  "A list of hooks to run after `doom/reload' has reloaded Doom.")
+
 
 ;;
 ;;; Bootstrap helpers
@@ -538,13 +540,13 @@ to least)."
       (file-missing
        ;; If the autoloads file fails to load then the user forgot to sync, or
        ;; aborted a doom command midway!
-       (if (equal (nth 3 e) doom-autoloads-file)
-           (signal 'doom-error
-                   (list "Doom is in an incomplete state"
-                         "run 'doom sync' on the command line to repair it"))
-         ;; Otherwise, something inside the autoloads file is triggering this
-         ;; error; forward it!
-         (signal 'doom-autoload-error e))))
+       (if (locate-file doom-autoloads-file load-path)
+           ;; Something inside the autoloads file is triggering this error;
+           ;; forward it to the caller!
+           (signal 'doom-autoload-error e)
+         (signal 'doom-error
+                 (list "Doom is in an incomplete state"
+                       "run 'doom sync' on the command line to repair it")))))
 
     ;; Load shell environment, optionally generated from 'doom env'. No need
     ;; to do so if we're in terminal Emacs, where Emacs correctly inherits
@@ -561,20 +563,19 @@ to least)."
     ;; interactive session. If they do, make sure they're properly initialized
     ;; when they do.
     (autoload 'doom-initialize-packages "core-packages")
-    (autoload 'doom-initialize-core-packages "core-packages")
-    (with-eval-after-load 'package (require 'core-packages))
-    (with-eval-after-load 'straight (doom-initialize-packages))
+    (eval-after-load 'package '(require 'core-packages))
+    (eval-after-load 'straight '(doom-initialize-packages))
+
+    ;; Bootstrap our GC manager
+    (add-hook 'doom-first-input-hook #'gcmh-mode)
 
     ;; Bootstrap the interactive session
-    (add-hook! 'window-setup-hook
-      (add-hook 'hack-local-variables-hook #'doom-run-local-var-hooks-h)
-      (add-hook 'after-change-major-mode-hook #'doom-run-local-var-hooks-maybe-h 'append)
-      (add-hook 'doom-first-input-hook #'gcmh-mode)
-      (add-hook-trigger! 'doom-first-input-hook 'pre-command-hook)
-      (add-hook-trigger! 'doom-first-file-hook 'after-find-file 'dired-initial-position-hook)
-      (add-hook-trigger! 'doom-first-buffer-hook 'after-find-file 'doom-switch-buffer-hook))
+    (add-hook 'after-change-major-mode-hook #'doom-run-local-var-hooks-h)
     (add-hook 'emacs-startup-hook #'doom-load-packages-incrementally-h)
-    (add-hook 'window-setup-hook #'doom-display-benchmark-h 'append)
+    (add-hook 'window-setup-hook #'doom-display-benchmark-h)
+    (doom-run-hook-on 'doom-first-buffer-hook '(after-find-file doom-switch-buffer-hook))
+    (doom-run-hook-on 'doom-first-file-hook   '(after-find-file dired-initial-position-hook))
+    (doom-run-hook-on 'doom-first-input-hook  '(pre-command-hook))
     (if doom-debug-p (doom-debug-mode +1))
 
     ;; Load core/core-*.el, the user's private init.el, then their config.el

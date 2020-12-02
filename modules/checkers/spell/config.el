@@ -16,23 +16,24 @@
             '("#\\+BEGIN_SRC" . "#\\+END_SRC")
             '("#\\+BEGIN_EXAMPLE" . "#\\+END_EXAMPLE"))
 
-  ;; Enable either aspell or hunspell.
-  ;;   If no module flags are given, enable either aspell or hunspell if their
-  ;;     binary is found.
-  ;;   If one of the flags `+aspell' or `+hunspell' is given, only enable that
-  ;;     spell checker.
+  ;; Enable either aspell, hunspell or enchant.
+  ;;   If no module flags are given, enable either aspell, hunspell or enchant
+  ;;     if their binary is found.
+  ;;   If one of the flags `+aspell', `+hunspell' or `+enchant' is given,
+  ;;     only enable that spell checker.
   (pcase (cond ((featurep! +aspell)   'aspell)
                ((featurep! +hunspell) 'hunspell)
-               ((executable-find "aspell")   'aspell)
-               ((executable-find "hunspell") 'hunspell))
+               ((featurep! +enchant)  'enchant)
+               ((executable-find "aspell")    'aspell)
+               ((executable-find "hunspell")  'hunspell)
+               ((executable-find "enchant-2") 'enchant))
     (`aspell
      (setq ispell-program-name "aspell"
            ispell-extra-args '("--sug-mode=ultra"
-                               "--run-together"
-                               "--dont-tex-check-comments"))
+                               "--run-together"))
 
      (unless ispell-dictionary
-       (setq ispell-dictionary "en"))
+       (setq ispell-dictionary "english"))
      (unless ispell-aspell-dict-dir
        (setq ispell-aspell-dict-dir
              (ispell-get-aspell-config-value "dict-dir")))
@@ -58,7 +59,10 @@
     (`hunspell
      (setq ispell-program-name "hunspell"))
 
-    (_ (doom-log "Spell checker not found. Either install `aspell' or `hunspell'"))))
+    (`enchant
+     (setq ispell-program-name "enchant-2"))
+
+    (_ (doom-log "Spell checker not found. Either install `aspell', `hunspell' or `enchant'"))))
 
 
 ;;
@@ -70,7 +74,7 @@
       :when (executable-find "aspell")
       :hook (text-mode . spell-fu-mode)
       :general ([remap ispell-word] #'+spell/correct)
-      :init
+      :preface
       (defvar +spell-correct-interface
         (cond ((featurep! :completion ivy)
                #'+spell-correct-ivy-fn)
@@ -79,6 +83,7 @@
               (#'+spell-correct-generic-fn))
         "Function to use to display corrections.")
 
+      :init
       (defvar +spell-excluded-faces-alist
         '((markdown-mode
            . (markdown-code-face

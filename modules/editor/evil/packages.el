@@ -1,7 +1,7 @@
 ;; -*- no-byte-compile: t; -*-
 ;;; editor/evil/packages.el
 
-(package! evil :pin "1e7aa5bfbd86feff0ed5982e487070352d326b90")
+(package! evil :pin "d6cf6680ec52733ea78dc530ed75fadc5171c758")
 (package! evil-args :pin "758ad5ae54ad34202064fec192c88151c08cb387")
 (package! evil-easymotion :pin "f96c2ed38ddc07908db7c3c11bcd6285a3e8c2e9")
 (package! evil-embrace :pin "4379adea032b25e359d01a36301b4a5afdd0d1b7")
@@ -11,7 +11,7 @@
 (package! evil-exchange :pin "3030e21ee16a42dfce7f7cf86147b778b3f5d8c1")
 (package! evil-indent-plus :pin "0c7501e6efed661242c3a20e0a6c79a6455c2c40")
 (package! evil-lion :pin "6b03593f5dd6e7c9ca02207f9a73615cf94c93ab")
-(package! evil-nerd-commenter :pin "87734b9c7fcd047f73a072b9d03ec05f786eeb03")
+(package! evil-nerd-commenter :pin "563cdc154b1f29d181b883563dd37be7eafafdee")
 (package! evil-numbers
   :recipe (:host github :repo "janpath/evil-numbers")
   :pin "006da406d175c05fedca4431cccd569e20bef92c")
@@ -33,4 +33,4 @@
     (package! neotree)
     (autoload 'neotree-make-executor "neotree" nil nil 'macro))
 
-  (package! evil-collection :pin "c136589d9584e5d01a4b3f2e4cf8ac5f5a23be63"))
+  (package! evil-collection :pin "05ed92a1292474d3a5edfb215c98750fcf1fe248"))
