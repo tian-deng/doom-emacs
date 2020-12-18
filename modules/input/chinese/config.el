@@ -5,8 +5,27 @@
   :init
   (setq pyim-dcache-directory (concat doom-cache-dir "pyim/"))
   :config
-  (setq pyim-page-tooltip t
-        default-input-method "pyim"))
+  (use-package pyim-basedict
+    :ensure nil
+    :config (pyim-basedict-enable))
+  (setq default-input-method "pyim")
+  (setq pyim-default-scheme 'xiaohe-shuangpin)
+  (setq-default pyim-english-input-switch-functions
+                '(pyim-probe-dynamic-english
+                  pyim-probe-isearch-mode
+                  pyim-probe-program-mode
+                  pyim-probe-org-structure-template))
+
+  (setq-default pyim-punctuation-half-width-functions
+                '(pyim-probe-punctuation-line-beginning
+                  pyim-probe-punctuation-after-punctuation))
+
+  (pyim-isearch-mode 1)
+  (setq pyim-page-tooltip 'postframe)
+  (setq pyim-page-length 5)
+  :bind
+  (("M-j" . pyim-convert-string-at-point) ;与 pyim-probe-dynamic-english 配合
+   ("C-;" . pyim-delete-word-from-personal-buffer)))
 
 
 (use-package! pangu-spacing
